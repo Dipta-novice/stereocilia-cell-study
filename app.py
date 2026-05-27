@@ -16,7 +16,7 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-from data_loader import VOXEL_SIZE, list_stack_pairs, load_stack_pair
+from data_loader import VOXEL_SIZE, list_stack_pairs, load_stack_pair, ensure_metadata_csv
 from feature_classes import FeaturePipeline
 from preprocessing_classes import PreprocessingPipeline
 from row_classifier import classify_rows, counts_per_row
@@ -32,17 +32,48 @@ st.set_page_config(
 st.sidebar.title("VASCilia P21")
 st.sidebar.caption("2D hair cell bundle analysis")
 
-data_root = Path(st.sidebar.text_input(
-    "Data root",
-    value=r"E:\3D-Cochlear-Quantifier\Dataset\VASCilia_3D_DataSet",
-    help="Folder containing the P21 subject folders.",
-))
+# Discover paths dynamically
+repo_root = Path(__file__).resolve().parents[1]
 
-md_path = Path("results/master_metadata_P21.csv")
-if not md_path.exists():
-    st.error(f"Metadata CSV not found at {md_path}. Run the metadata step first.")
+# Find Excel file to determine data_root
+excel_candidates = [
+    repo_root / "VASCilia_2D_Dataset.xlsx",
+    repo_root / "VASCilia_3D_Dataset.xlsx",
+    repo_root.parents[1] / "VASCilia_2D_Dataset.xlsx",
+    repo_root.parents[1] / "VASCilia_3D_Dataset.xlsx",
+    repo_root.parents[2] / "VASCilia_2D_Dataset.xlsx",
+    repo_root.parents[2] / "VASCilia_3D_Dataset.xlsx",
+]
+
+excel_path = None
+for candidate in excel_candidates:
+    if candidate.exists():
+        excel_path = candidate
+        break
+
+if excel_path is None:
+    st.error("Excel file not found. Cannot determine dataset root.")
     st.stop()
+
+data_root = excel_path.parent
+md_path = repo_root / "results" / "master_metadata_P21.csv"
+
+# Auto-generate metadata CSV if missing
+with st.spinner("Loading metadata..."):
+    try:
+        ensure_metadata_csv(repo_root)
+    except FileNotFoundError as e:
+        st.error(f"Error generating metadata: {e}")
+        st.stop()
+
+if not md_path.exists():
+    st.error(f"Metadata CSV not found at {md_path}.")
+    st.stop()
+
 md = pd.read_csv(md_path)
+
+# Display dataset path info
+st.sidebar.info(f"📂 Dataset: {data_root}")
 
 stack_id = st.sidebar.selectbox(
     "Pick a subject",

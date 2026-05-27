@@ -8,6 +8,7 @@ from each subject folder instead of stacking files into a volume.
 
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+import argparse
 import re
 
 import numpy as np
@@ -240,11 +241,95 @@ def build_metadata_from_excel(excel_path: Path,
     return md
 
 
+def ensure_metadata_csv(repo_root: Optional[Path] = None,
+                        sheet_name: str = "P21") -> Path:
+    """
+    Ensure master metadata CSV exists. Generate if missing.
+    Returns the path to the metadata CSV.
+    """
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parents[1]
+    
+    output_path = repo_root / "results" / "master_metadata_P21.csv"
+    
+    if output_path.exists():
+        return output_path
+    
+    # Look for Excel file in multiple locations
+    excel_candidates = [
+        repo_root / "VASCilia_2D_Dataset.xlsx",
+        repo_root / "VASCilia_3D_Dataset.xlsx",
+        repo_root.parents[1] / "VASCilia_3D_Dataset.xlsx",
+        repo_root.parents[2] / "VASCilia_3D_Dataset.xlsx",
+    ]
+    
+    excel_path = None
+    for candidate in excel_candidates:
+        if candidate.exists():
+            excel_path = candidate
+            break
+    
+    if excel_path is None:
+        raise FileNotFoundError(
+            f"Excel file not found in any of these locations:\n" +
+            "\n".join(str(c) for c in excel_candidates)
+        )
+    
+    build_metadata_from_excel(
+        excel_path,
+        sheet_name=sheet_name,
+        save_csv=output_path,
+    )
+    return output_path
+
+
 if __name__ == "__main__":
-    print("data_loader.py parse test")
-    for name in [
-        "Litter17Mouse2APEX-delBUN_AiryscanProcessing",
-        "Litter18Mouse2BASE-Eps8KONegativeControl_Airy",
-        "Litter17Mouse7MIDDLE-delBUNdelCAP_AiryscanPro",
-    ]:
-        print(f"  {name!s:55s} -> {parse_subject_name(name)}")
+    parser = argparse.ArgumentParser(
+        description="Build master metadata CSV from the VASCilia Excel workbook"
+    )
+    repo_root = Path(__file__).resolve().parents[1]
+    
+    # Find Excel file in multiple locations
+    excel_candidates = [
+        repo_root / "VASCilia_2D_Dataset.xlsx",
+        repo_root / "VASCilia_3D_Dataset.xlsx",
+        repo_root.parents[1] / "VASCilia_3D_Dataset.xlsx",
+        repo_root.parents[2] / "VASCilia_3D_Dataset.xlsx",
+    ]
+    default_excel = None
+    for candidate in excel_candidates:
+        if candidate.exists():
+            default_excel = candidate
+            break
+    
+    if default_excel is None:
+        default_excel = repo_root / "VASCilia_2D_Dataset.xlsx"  # fallback
+    
+    parser.add_argument(
+        "--excel-path", "-e",
+        type=Path,
+        default=default_excel,
+        help="Path to VASCilia_2D_Dataset.xlsx workbook",
+    )
+    parser.add_argument(
+        "--sheet-name", "-s",
+        default="P21",
+        help="Excel sheet name to load",
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=Path,
+        default=repo_root / "results" / "master_metadata_P21.csv",
+        help="Output CSV path",
+    )
+    args = parser.parse_args()
+
+    if not args.excel_path.exists():
+        parser.error(f"Excel file not found: {args.excel_path}")
+
+    metadata = build_metadata_from_excel(
+        args.excel_path,
+        sheet_name=args.sheet_name,
+        save_csv=args.output,
+    )
+    print(f"Saved metadata CSV to {args.output} ({len(metadata)} rows)")
